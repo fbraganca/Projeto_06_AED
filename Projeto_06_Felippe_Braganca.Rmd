@@ -1,0 +1,379 @@
+---
+title: "Projeto Análise Exploratória de Dados [23E1_3]"
+subtitle: Prof. Otto Tavares Nascimento
+author: "Felippe Bragança"
+date: "`r Sys.Date()`"
+output: 
+  pdf_document: 
+    keep_md: yes
+    latex_engine: lualatex
+    fig_width: 6.5
+    fig_height: 4
+    df_print: kable
+header-includes:
+   - \usepackage{setspace}
+   - \singlespacing
+   - \usepackage{paralist}
+   - \let\itemize\compactitem
+fontsize: 10pt
+mainfont: Calibri
+sansfont: Calibri
+monofont: Calibri
+indent: true
+self_contained: no
+always_allow_html: yes
+---
+
+Nessa disciplina, aprofundamos nossos conhecimentos na linguagem R e de estatística, para realizar análises descritivas de bases de dados, tarefa que é extremamente importante para o dia-a-dia de um cientista de dados. Agora iremos validar nosso conhecimento.
+
+#### 1.	O relatório final deve ser apresentado utilizando RMarkdown. Nesse relatório devem haver:
+
+\hfill
+
+*   Imagens estáticas ("prints" de tela, imagens da internet - com a devida fonte mencionada - ou figuras criadas pelo aluno fora do ambiente do R);
+*   Imagens geradas através do ambiente R, particularmente com a biblioteca ggplot;
+*   Links clicáveis (como fontes e referências).
+
+#### 2.	Escolha uma base de dados para realizar esse projeto. Essa base de dados será utilizada durante toda sua análise. Essa base necessita ter 4 (ou mais) variáveis de interesse, onde todas são numéricas (confira com o professor a possibilidade de utilização de dados categóricos). Observe que é importante que haja dados faltantes em pelo menos uma variável para executar esse projeto. Caso você tenha dificuldade para escolher uma base, o professor da disciplina irá designar para você.
+
+                          
++ Dados coletados de um projeto de boas práticas para ensinar aos colaboradores um melhor método de criação de senhas e posterior diminuição dos pedidos de reset de senha.
++ Sistemas envolvidos: **Rede**, **E-mail**, **Netrac** e **Sisac**.
++ Base de dados em csv com 7 variáveis e 260 observações coletadas no ano de 2005.
+
+\hfill
+    
+
+#### Explique qual o motivo para a escolha dessa base e aponte os resultados esperados através da análise.
+
++ Base com dados reais de um projeto empresarial e com dados faltantes provenientes de uma falha no sistema de coleta em uma das variáveis.
++ Efetuar o tratamento dos dados faltantes e estudo estatístico para verificar se o projeto diminuiu o número de pedidos de reset de senhas dos sistemas.
+
+\newpage
+
+##### Bibliotecas
+
+\hfill
+```{r Bibliotecas, echo = TRUE}
+library(conflicted)
+library(tidyverse)
+library(knitr)
+library(corrplot)
+library(dlookr)
+library(summarytools)
+library(ggplot2)
+library(psych)
+library(dplyr)
+library(gridExtra)
+library(ggpubr)
+library(naniar)
+library(finalfit)
+library(mice)
+```
+
++ Seed
+
+```{r Seed, echo = TRUE}
+set.seed(2023)
+```
+
+\newpage
+
+##### Importando a base de dados
+
+\hfill
+
++ Lendo o arquivo csv e criando a base de dados.
+
+```{r Criando-Base, echo = TRUE}
+bd.sys <- data.frame(read.csv2("Reset_Sistemas_2005.csv"))
+```
+
++ Diagnosticando as variáveis da base de dados.
+
+```{r Diagnose, echo = TRUE}
+dlookr::diagnose(bd.sys)
+```
+
+\hfill
+
++   Na primeira análise da base podemos verificar que a variável **netrac** possui 18 dados faltantes (NA) provenientes de uma falha no sistema de coleta.
+
+\newpage
+
+#### Tratando os dados faltantes
+
++   Como os dados faltantes da variável **netrac** são do tipo completamente aleatórios, podemos imputar os dados faltantes via MICE sem introduzir um viés na análise.
+
+\hfill
+
++   Imputando Dados.
+
+```{r MICE-Temp, results='hide', message=FALSE, echo=TRUE}
+imputed <- mice(bd.sys,m=5,maxit=50,meth='pmm',seed=500)
+```
+
++   Verificar os dados imputados.
+
+```{r MICE-Netrac, echo=TRUE}
+dlookr::diagnose(imputed$imp$netrac)
+```
+
+
+##### Inspecionando a distribuição de dados originais e imputados.
+
++	Podemos usar um gráfico de dispersão e plotar o netrac contra as outras variáveis de sistemas.
+
+```{r Comp-Dispersão, echo=TRUE}
+xyplot(imputed,netrac ~ rede+email+sisac,pch=18,cex=1)
+```
+
++   O ideal seria observar que a forma dos \textcolor{magenta}{pontos imputados}, coincide com a forma dos \textcolor{blue}{pontos observados}. 
+    A forma correspondente nos diz que os valores imputados são valores aceitáveis.
+
+\newpage
+
++   Gráfico de densidade
+
+```{r Comp-Densityplot, fig.dim = c(7, 4), echo=TRUE}
+densityplot(imputed)
+```
+
+
++   Stripplot: função que mostra as distribuições das variáveis como pontos individuais.
+       
+```{r Comp-Stripplot, fig.dim = c(7, 4), echo=TRUE}
+stripplot(imputed,netrac, pch = 20, cex = 1)
+```
+
+\newpage
+
+##### Gerando a nova base substituindo os dados faltantes pelo conjunto gerado.
+
++   Nova base completa.
+
+```{r Novo-DF, echo=TRUE}
+imp1 <- complete(imputed,1); imp2 <- complete(imputed,2)
+imp3 <- complete(imputed,3); imp4 <- complete(imputed,4); imp5 <- complete(imputed,5)
+
+reset = data.frame(
+  mes = bd.sys$mes,
+  rede = bd.sys$rede,
+  email = bd.sys$email,
+  netrac = cbind(imp1$netrac,imp2$Porte,imp3$Porte,imp4$Porte,imp5$Porte),
+  sisac = bd.sys$sisac)
+
+rm(imp1,imp2,imp3,imp4,imp5)
+```
+
++ Diagnosticando as variáveis da nova base de dados.
+
+```{r Diagnose-Reset, echo = TRUE}
+dlookr::diagnose(reset)
+```
+
+
+#### 3.	Utilizando o pacote summarytools (função descr), descreva estatisticamente a sua base de dados.
+
++ Estatística descritiva das variáveis.
+
+```{r Estatística-Desc, echo = TRUE}
+knitr::kable(descr(reset))
+```
+
+\newpage
+
+#### 4.	Crie um gráfico com a matriz de espalhamento (scatter matrix plot) para sua base de dados. Através de investigação visual, quais são as variáveis mais correlacionadas. Apresente o gráfico e justifique.
+
++ Matriz de espalhamento.
+
+```{r Scatter, echo = TRUE}
+pairs(reset,col= "#4169E1",lower.panel = NULL)
+```
+
+* Pelo agrupamento podemos observar que na base de dados **reset** as variáveis que possuem uma maior correlação são **rede** e **email**. Podemos observar também que essa relação é linear positiva.
+
+
+\newpage
+
+#### 5.	Sobre a normalidade das variáveis:
+
+\hfill
+
+a.   Descreva o que é uma distribuição normal;
+\hfill
+-   Distribuição normal é um tipo de distribuição estatística para valores contínuos e uma de suas características é possuir uma curva em formato de sino. Em uma curva normal ou Gaussiana, a média, moda e mediana possuem valores iguais, sendo que há baixa probabilidade de valores extremos mais afastados da média acontecerem.
+
+b.   Crie um histograma para cada variável da sua base de dados. Justifique a escolha do número de bins para seu trabalho. (usando o pacote ggplot);
+
++ Histograma das variáveis dos sistemas.
+
+```{r Histograma, echo = TRUE, warning=FALSE}
+
+RD <- reset %>% dplyr::select(rede) %>% ggplot(aes(x=rede))+
+  geom_histogram(aes(y = after_stat(density)) ,  bins = 7, fill = 'dodgerblue') + 
+  xlab('Rede') + ylab('Dens. Frequência') + 
+  geom_vline(xintercept=c(median(reset$rede), mean(reset$rede))) +
+  annotate("text", x=median(reset$rede) + -4, y=0.01, label="Mediana", angle=90) +
+  annotate("text", x=mean(reset$rede) + 4, y=0.01, label="Média", angle=90) +
+  geom_density(linetype = 2) + theme_classic()
+
+EM <- reset %>% dplyr::select(email) %>% ggplot(aes(x=email))+
+  geom_histogram(aes(y = after_stat(density)) ,bins = 11, fill = 'dodgerblue') + 
+  xlab('E-mail') + ylab('Dens. Frequência') + 
+  geom_vline(xintercept=c(median(reset$email), mean(reset$email))) +
+  annotate("text", x=median(reset$email) + -4, y=0.01, label="Mediana", angle=90) +
+  annotate("text", x=mean(reset$email) + 4, y=0.01, label="Média", angle=90) +
+  geom_density(linetype = 2) + theme_classic()
+
+NT <- reset %>% dplyr::select(netrac) %>% ggplot(aes(x=netrac))+
+  geom_histogram(aes(y = after_stat(density)), bins = 11, fill = 'dodgerblue') + 
+  xlab('Netrac') + ylab('Dens. Frequência') +
+  geom_vline(xintercept=c(median(reset$netrac), mean(reset$netrac)))+
+  annotate("text", x=median(reset$netrac) + -3, y=0.015, label="Mediana", angle=90) + 
+  annotate("text", x=mean(reset$netrac) + 3, y=0.015, label="Média", angle=90) + 
+  geom_density(linetype = 2) + theme_classic()
+
+SI <- reset %>% dplyr::select(sisac) %>% ggplot(aes(x=sisac))+
+  geom_histogram(aes(y = after_stat(density)), bins = 12, fill = 'dodgerblue') + 
+  xlab('Sisac') + ylab('Dens. Frequência') + 
+  geom_vline(xintercept=c(median(reset$sisac), mean(reset$sisac))) + 
+  annotate("text", x=median(reset$sisac) + -3, y=0.015, label="Mediana", angle=90) + 
+  annotate("text", x=mean(reset$sisac) + 3, y=0.015, label="Média", angle=90) + 
+  geom_density(linetype = 2) + theme_classic()
+
+grid.arrange(RD, EM, NT, SI, nrow =2, ncol = 2)
+```
+
+
+* Foi utilizada uma curva de densidade como um guia para estimar o melhor número de bins através de uma curva mais suavizada.
+
+\newpage
+
+c.   Crie um gráfico Q-Q para cada variável de sua base de dados. (use as funções presentes no pacote ggpubr);
+
++ Gráfico Q-Q das variáveis dos sistemas.
+
+```{r Q-Q, echo = TRUE}
+QQRD <- ggqqplot(reset$rede, color = '#175182', size = 1, title = "Rede")
+QQEM <- ggqqplot(reset$email, color = '#4169E1', size = 1, title = "E-mail")
+QQNT <- ggqqplot(reset$netrac, color = '#2382b9', size = 1, title = "Netrac")
+QQSI <- ggqqplot(reset$sisac, color = '#00AFBB', size = 1, title = "Sisac")
+
+grid.arrange(QQRD, QQEM, QQNT, QQSI, nrow =2, ncol = 2)
+```
+
+
+d.   Execute um teste de normalidade Shapiro-Wilk;
+
++ Teste Shapiro-Wilk.
+
+```{r Shapiro-Wilk, echo = TRUE}
+st1 <- shapiro.test(reset$rede); st2 <- shapiro.test(reset$email)
+st3 <- shapiro.test(reset$netrac); st4 <- shapiro.test(reset$sisac)
+
+STest <- data.frame(method = c(st1$method, st2$method, st3$method, st4$method), 
+                    data = c(st1$data.name, st2$data.name, st3$data.name, st4$data.name), 
+                    W = c(st1$statistic[[1]], st2$statistic[[1]], st3$statistic[[1]],st4$statistic[[1]]), 
+                    p.value = c(st1$p.value, st2$p.value, st3$p.value, st4$p.value))
+rm(st1,st2,st3,st4)
+STest
+```
+
+
+e.   Baseado nos itens anteriores, é possível afirmar que algumas das variáveis se aproximam de uma distribuição normal? Justifique.
+
+\hfill
+
+-   Sim, **email** e **netrac**.
+-   Na análise do gráfico Quartil-Quartil a linha representa os resultados esperados se os dados seguissem a distribuição normal. Já a faixa por sua vez representa a variabilidade tolerável ao redor dessa linha. Quanto mais os dados (pontos) escaparem dessa faixa mais fora do padrão da distribuição normal os dados estão.
+-   O teste de Shapiro-Wilk tem como hipótese nula que os dados são normalmente distribuídos. As variáveis **email** com p-value = **0.1535** e **netrac** com p-value = **0.1205** atendem os níveis de confiança de 90%.
+
+
+#### 6.	Qualidade de dados tem sido um dos temas mais abordados nos projetos de estruturação em data analytics, sendo um dos principais indicadores do nível de maturidade das organizações. Um dos problemas mais comuns de qualidade é relacionado à completude de dados. Em suas palavras, como é definido completude? Qual o impacto em uma análise exploratória de dados?
+
+\hfill
+
+-   A completude é definida como o percentual de registros ou campos preenchidos em uma base de dados, ou seja, um baixo índice de dados NA.
+-   O principal impacto em uma análise exploratória é com relação a qualidade dos dados podendo trazer prejuízos na avaliação dos mesmos. 
+
+
+#### 7.	Qual a completude para cada uma das variáveis do seu banco de dados?
+
++ Completude da base.
+
+\hfill
+
+```{r Completude, echo=TRUE}
+miss_var_summary(reset)
+```
+
+
+\hfill
+
+
+#### 8.	Realize uma operação de imputação de dados usando o pacote MICE.
+
+
+>   Devido a característica dos dados faltantes dessa base ser do tipo completamente aleatórios, a imputação dos dados foi feita pelo pacote MICE no início da análise.
+
+
+\newpage
+
+
+#### Analise do resultado do projeto
+
+
++ Agregando os dados por mês para verificar a efetividade do projeto.
+
+```{r, Re-Anual, echo=TRUE}
+reset.mes <- data.frame(group_by(reset, mes) %>% 
+                          dplyr::summarize(rede = sum(rede), email = sum(email), netrac = sum(netrac), sisac = sum(sisac)))
+```
+
++ Gráfico Temporal.
+
+```{r, G-Anual, echo=TRUE}
+ggplot(
+reset.mes %>% gather(key, value, rede, email, netrac, sisac),
+aes(x = mes, y = value, color = key)
+) + geom_line() + geom_point() + xlab("Período de Análise") + ylab("Ocorrências Registradas") + labs(
+title = "Séries temporais: Reset de senha",
+subtitle = "Ano do projeto: 2005", color = "Sistema"
+) + theme_bw()
+```
+
+
++ Analisando o gráfico podemos concluir que o projeto de boas práticas de criação de senhas obteve o resultado esperado na diminuição de pedidos de reset.
+
+
+\newpage
+
+#### 9.	Crie um dashboard Shiny onde seja possível selecionar (tire um print-screen da tela final do sistema):
+
+\hfill
+
+a.	Uma variável da sua base de dados e um gráfico em linha seja mostrado na tela;
+b.	Escolher a cor da linha do gráfico;
+c.	Selecionar o limite inferior e superior do eixo X do gráfico;
+d.	Selecionar o limite inferior e superior do eixo Y do gráfico.
+
++ Dashboard Shiny
+
+
+![Dashboard Shiny 01](Shiny\Projeto_Shiny_01.png)
+
+
+
+#### 10.	Disponibilize os códigos (RMarkdown e Shiny) em uma plataforma de compartilhamento de códigos (sugestão GitHub)
+
+\hfill
+    
+  [\textcolor{blue}{Link GitHub}](https://github.com/fbraganca/projeto_06_AED.git)
+  
+  [\textcolor{blue}{Link Shinyapps}](https://fbraganca.shinyapps.io/Projeto_Reset/)
+
+\hfill
+     
+     
+Assim que terminar, salve o seu arquivo PDF e poste no Moodle. Utilize o seu nome para nomear o arquivo, identificando também a disciplina no seguinte formato: “nomedoaluno_nomedadisciplina_pd.PDF”.
